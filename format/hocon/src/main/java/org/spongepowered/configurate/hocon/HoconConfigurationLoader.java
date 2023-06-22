@@ -103,6 +103,8 @@ public final class HoconConfigurationLoader extends AbstractConfigurationLoader<
      */
     public static final class Builder extends AbstractConfigurationLoader.Builder<Builder, HoconConfigurationLoader> {
         private ConfigRenderOptions render = DEFAULT_RENDER_OPTIONS;
+        private  boolean useExperimentalSerializerOptions = false;
+        private HoconRenderer.@Nullable Options experimentalSerializerOptions = null;
 
         Builder() {
             this.from(DEFAULT_OPTIONS_SOURCE);
@@ -164,6 +166,16 @@ public final class HoconConfigurationLoader extends AbstractConfigurationLoader<
             return this;
         }
 
+        public Builder useExperimentalSerializer(final boolean useExperimentalSerializer) {
+            this.useExperimentalSerializerOptions = useExperimentalSerializer;
+            return this;
+        }
+
+        public Builder experimentalSerializerOptions(final HoconRenderer.Options options) {
+            this.experimentalSerializerOptions = options;
+            return this;
+        }
+
         @Override
         public HoconConfigurationLoader build() {
             defaultOptions(o -> o.nativeTypes(NATIVE_TYPES));
@@ -172,10 +184,21 @@ public final class HoconConfigurationLoader extends AbstractConfigurationLoader<
     }
 
     private final ConfigRenderOptions render;
+    private final @Nullable HoconRenderer experimentalRenderer;
 
     private HoconConfigurationLoader(final Builder build) {
         super(build, new CommentHandler[] {CommentHandlers.HASH, CommentHandlers.DOUBLE_SLASH});
         this.render = build.render;
+        if (build.useExperimentalSerializerOptions) {
+            final HoconRenderer.@Nullable Options options = build.experimentalSerializerOptions;
+            if (options != null) {
+                this.experimentalRenderer = HoconRenderer.from(options);
+            } else {
+                this.experimentalRenderer = HoconRenderer.from(HoconRenderer.Options.defaults());
+            }
+        } else {
+            this.experimentalRenderer = null;
+        }
     }
 
     @Override
@@ -250,8 +273,14 @@ public final class HoconConfigurationLoader extends AbstractConfigurationLoader<
                 writer.write(SYSTEM_LINE_SEPARATOR);
                 return;
             }
-            final ConfigValue value = fromValue(node);
-            final String renderedValue = value.render(this.render);
+            final String renderedValue;
+            if (this.experimentalRenderer == null) {
+                final ConfigValue value = fromValue(node);
+                renderedValue = value.render(this.render);
+            } else {
+                // TODO - headers are handled separately from this, would need to implemenet that as well
+                renderedValue = this.experimentalRenderer.renderNode(node);;
+            }
             writer.write(renderedValue);
         } catch (final IOException io) {
             throw new ConfigurateException(node, io);
