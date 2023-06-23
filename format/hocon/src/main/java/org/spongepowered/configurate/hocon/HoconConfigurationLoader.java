@@ -26,6 +26,7 @@ import com.typesafe.config.ConfigOriginFactory;
 import com.typesafe.config.ConfigRenderOptions;
 import com.typesafe.config.ConfigValue;
 import com.typesafe.config.ConfigValueFactory;
+import java.util.Iterator;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import org.spongepowered.configurate.CommentedConfigurationNodeIntermediary;
@@ -35,6 +36,7 @@ import org.spongepowered.configurate.ConfigurationOptions;
 import org.spongepowered.configurate.loader.AbstractConfigurationLoader;
 import org.spongepowered.configurate.loader.CommentHandler;
 import org.spongepowered.configurate.loader.CommentHandlers;
+import org.spongepowered.configurate.loader.HeaderMode;
 import org.spongepowered.configurate.loader.LoaderOptionSource;
 import org.spongepowered.configurate.loader.ParsingException;
 import org.spongepowered.configurate.util.UnmodifiableCollections;
@@ -176,6 +178,33 @@ public final class HoconConfigurationLoader extends AbstractConfigurationLoader<
             return this;
         }
 
+        CommentHandler[] getCommentHandlers() {
+            if (!this.useExperimentalSerializerOptions) {
+                // default
+                return new CommentHandler[] {CommentHandlers.HASH, CommentHandlers.DOUBLE_SLASH};
+            }
+
+            // Order changes which CommentHandler is the default, which changes how the header will be written
+            // to match the selected comment style
+            final HoconRenderer.Options options = this.getExperimentalSerializerOptions();
+            switch (options.getCommentStyle()) {
+                case HASH:
+                    return new CommentHandler[] {CommentHandlers.HASH, CommentHandlers.DOUBLE_SLASH};
+                case DOUBLE_SLASH:
+                    return new CommentHandler[] {CommentHandlers.DOUBLE_SLASH, CommentHandlers.HASH};
+                default:
+                    throw new IllegalStateException("Unexpected comment style: " + options.getCommentStyle());
+            }
+        }
+
+        HoconRenderer.Options getExperimentalSerializerOptions() {
+            if (this.experimentalSerializerOptions == null) {
+                return HoconRenderer.Options.defaults();
+            } else {
+                return this.experimentalSerializerOptions;
+            }
+        }
+
         @Override
         public HoconConfigurationLoader build() {
             defaultOptions(o -> o.nativeTypes(NATIVE_TYPES));
@@ -187,15 +216,10 @@ public final class HoconConfigurationLoader extends AbstractConfigurationLoader<
     private final @Nullable HoconRenderer experimentalRenderer;
 
     private HoconConfigurationLoader(final Builder build) {
-        super(build, new CommentHandler[] {CommentHandlers.HASH, CommentHandlers.DOUBLE_SLASH});
+        super(build, build.getCommentHandlers());
         this.render = build.render;
         if (build.useExperimentalSerializerOptions) {
-            final HoconRenderer.@Nullable Options options = build.experimentalSerializerOptions;
-            if (options != null) {
-                this.experimentalRenderer = HoconRenderer.from(options);
-            } else {
-                this.experimentalRenderer = HoconRenderer.from(HoconRenderer.Options.defaults());
-            }
+            this.experimentalRenderer = HoconRenderer.from(build.getExperimentalSerializerOptions());
         } else {
             this.experimentalRenderer = null;
         }

@@ -3,7 +3,7 @@ package org.spongepowered.configurate.hocon;
 import com.typesafe.config.ConfigRenderOptions;
 import com.typesafe.config.ConfigValueFactory;
 import com.typesafe.config.impl.ConfigImplUtil;
-import java.io.StringWriter;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import org.checkerframework.checker.nullness.qual.Nullable;
@@ -32,13 +32,17 @@ public final class HoconRenderer {
         this.computedSpaceLeftOfSep = Strings.repeat(" ", this.options.spacesBeforeSeparator);
         this.computedSpaceRightOfSep = Strings.repeat(" ", this.options.spacesAfterSeparator);
 
-        if (this.options.stringQuoting == Options.StringQuoting.ALWAYS) {
+        this.valueRenderOptions = quotingRenderOptions(this.options.stringQuoting);
+    }
+
+    private static ConfigRenderOptions quotingRenderOptions(Options.Quoting quoting) {
+        if (quoting == Options.Quoting.ALWAYS) {
             // concise defaults to `json` which will always quote strings
-            this.valueRenderOptions = ConfigRenderOptions.concise();
-        } else if (this.options.stringQuoting == Options.StringQuoting.WHEN_REQUIRED) {
-            this.valueRenderOptions = ConfigRenderOptions.concise().setJson(false);
+            return ConfigRenderOptions.concise();
+        } else if (quoting == Options.Quoting.WHEN_REQUIRED) {
+            return ConfigRenderOptions.concise().setJson(false);
         } else {
-            throw new IllegalStateException("stringQuoting value unexpected: " + this.options.stringQuoting);
+            throw new IllegalStateException("quoting value unexpected: " + quoting);
         }
     }
 
@@ -47,36 +51,22 @@ public final class HoconRenderer {
     }
 
     String renderNode(final ConfigurationNode node) throws ConfigurateException {
-        StringWriter writer = new StringWriter();
-        this.renderNode(writer, node, 0);
-        return writer.toString();
+        final StringBuilder sb = new StringBuilder();
+        this.renderNode(sb, node, 0);
+        return sb.toString();
     }
 
-    private void renderNode(final StringWriter writer, final ConfigurationNode node, final int indentLevel) throws ConfigurateException {
+    private void renderNode(final StringBuilder sb, final ConfigurationNode node, final int indentLevel) throws ConfigurateException {
         if (node.isMap()) {
-            if (indentLevel > 0) {
-                // Only open maps when we aren't dealing with the root node
-                writer.append('{');
-                renderNewline(writer);
-            }
-
-            this.renderMap(writer, node.childrenMap(), indentLevel);
-
-            if (indentLevel > 0) {
-                // close map, again only when we aren't the root node
-                // indentLevel - 1 because it's the closing brace
-                renderIndent(writer, indentLevel - 1);
-                writer.append('}');
-                renderNewline(writer);
-            }
+            this.renderMap(sb, node.childrenMap(), indentLevel);
         } else if (node.isList()) {
-            this.renderList(writer, node.childrenList(), indentLevel);
+            this.renderList(sb, node.childrenList(), indentLevel);
         } else {
-            this.renderScalar(writer, node.rawScalar(), indentLevel);
+            this.renderScalar(sb, node.rawScalar(), indentLevel);
         }
     }
 
-    private void renderComments(final StringWriter writer, final ConfigurationNode node, final int indentLevel) {
+    private void renderComments(final StringBuilder sb, final ConfigurationNode node, final int indentLevel) {
         if (!(node instanceof CommentedConfigurationNode)) {
             return;
         }
@@ -87,38 +77,51 @@ public final class HoconRenderer {
         }
 
         for (String line : CONFIGURATE_LINE_PATTERN.split(comment)) {
-            this.renderIndent(writer, indentLevel);
-            writer.append(this.options.commentStyle.getCommentPrefix());
-            writer.append(' ');
-            writer.append(line);
-            renderNewline(writer);
+            this.renderIndent(sb, indentLevel);
+            sb.append(this.options.commentStyle.getCommentPrefix());
+            sb.append(' ');
+            sb.append(line);
+            renderNewline(sb);
         }
     }
 
-    private void renderMap(final StringWriter writer, final Map<Object, ? extends ConfigurationNode> map, final int indentLevel) throws ConfigurateException {
+    private void renderMap(final StringBuilder sb, final Map<Object, ? extends ConfigurationNode> map, final int indentLevel) throws ConfigurateException {
+        if (indentLevel > 0) {
+            // Only open maps when we aren't dealing with the root node
+            sb.append('{');
+            renderNewline(sb);
+        }
+
         for (final Map.Entry<Object, ? extends ConfigurationNode> entry : map.entrySet()) {
             final ConfigurationNode node = entry.getValue();
 
-            renderComments(writer, node, indentLevel);
-            renderIndent(writer, indentLevel);
+            renderComments(sb, node, indentLevel);
+            renderIndent(sb, indentLevel);
 
             final String key = String.valueOf(entry.getKey());
-            // TODO - add configuration option to always quote keys
-            if (isSimpleKey(key)) {
-                writer.append(key);
+            if (!isSimpleKey(key) || this.options.keyQuoting == Options.Quoting.ALWAYS) {
+                sb.append(ConfigImplUtil.renderJsonString(key));
             } else {
-                writer.append(ConfigImplUtil.renderJsonString(key));
+                sb.append(key);
             }
 
             if (!node.isMap() || this.options.objectSeparator == Options.ObjectSeparator.INCLUDED) {
-                renderKeyValueSeparator(writer);
+                renderKeyValueSeparator(sb);
             } else {
                 // objects can have separators omitted
                 // TODO - should this be configurable?
-                writer.append(' ');
+                sb.append(' ');
             }
 
-            renderNode(writer, node, indentLevel + 1);
+            renderNode(sb, node, indentLevel + 1);
+            renderNewline(sb);
+        }
+
+        if (indentLevel > 0) {
+            // close map, again only when we aren't the root node
+            // indentLevel - 1 because it's the closing brace
+            renderIndent(sb, indentLevel - 1);
+            sb.append('}');
         }
     }
 
@@ -138,34 +141,89 @@ public final class HoconRenderer {
         return true;
     }
 
-    private void renderList(final StringWriter writer, final List<? extends ConfigurationNode> list, final int indentLevel) {
-        // TODO - lists are more complicated
-        throw new IllegalStateException("TODO");
+    private void renderList(final StringBuilder sb, final List<? extends ConfigurationNode> list, final int indentLevel) throws ConfigurateException {
+        // First, check if there's anything in this list which would prevent us from writing it in 1 line
+        // Anything that isn't a scalar will result in the whole list being written out with each value on its own line
+        // Comments on any nodes also necessitates individual lines
+        boolean inline = true;
+        for (final ConfigurationNode node : list) {
+            if (node.isMap() || node.isList()) {
+                inline = false;
+                break;
+            }
+            if (node instanceof CommentedConfigurationNode) {
+                if (((CommentedConfigurationNode) node).comment() != null) {
+                    inline = false;
+                    break;
+                }
+            }
+        }
+
+        if (inline) {
+            final int longLineLength = 80;
+            // inline is possible, but we don't want to write out lists that are too long
+            int length = 0;
+            for (final ConfigurationNode node : list) {
+                final String valueText = ConfigValueFactory.fromAnyRef(node.rawScalar()).render(this.valueRenderOptions);
+                length += valueText.length() + 1;
+                if (length >= longLineLength) {
+                    break;
+                }
+            }
+            if (length >= longLineLength) {
+                inline = false;
+            }
+        }
+
+        sb.append('[');
+
+        final Iterator<? extends ConfigurationNode> iter = list.iterator();
+        while (iter.hasNext()) {
+            final ConfigurationNode node = iter.next();
+            if (inline) {
+                sb.append(' ');
+                renderNode(sb, node, 0);
+            } else {
+                renderNewline(sb);
+                renderIndent(sb, indentLevel);
+                renderNode(sb, node, indentLevel + 1);
+            }
+            if (iter.hasNext()) {
+                sb.append(',');
+            }
+        }
+
+        if (inline) {
+            sb.append(" ]");
+        } else {
+            renderNewline(sb);
+            renderIndent(sb, indentLevel - 1);
+            sb.append(']');
+        }
     }
 
-    private void renderScalar(final StringWriter writer, final @Nullable Object value, final int indentLevel) {
+    private void renderScalar(final StringBuilder sb, final @Nullable Object value, final int indentLevel) {
         final String valueText = ConfigValueFactory.fromAnyRef(value).render(this.valueRenderOptions);
-        writer.append(valueText);
-        renderNewline(writer);
+        sb.append(valueText);
     }
 
-    private void renderIndent(final StringWriter writer, final int indentLevel) {
+    private void renderIndent(final StringBuilder sb, final int indentLevel) {
         for (int i = 0; i < indentLevel; i++) {
-            writer.append(this.computedIndent);
+            sb.append(this.computedIndent);
         }
     }
 
-    private void renderNewline(final StringWriter writer) {
-        writer.append(this.options.lineSeparator.getSeparator());
+    private void renderNewline(final StringBuilder sb) {
+        sb.append(this.options.lineSeparator.getSeparator());
     }
 
-    private void renderKeyValueSeparator(final StringWriter writer) {
+    private void renderKeyValueSeparator(final StringBuilder sb) {
         if (!this.computedSpaceLeftOfSep.isEmpty()) {
-            writer.append(this.computedSpaceLeftOfSep);
+            sb.append(this.computedSpaceLeftOfSep);
         }
-        writer.append(this.options.separatorCharacter.getSeparator());
+        sb.append(this.options.separatorCharacter.getSeparator());
         if (!this.computedSpaceRightOfSep.isEmpty()) {
-            writer.append(this.computedSpaceRightOfSep);
+            sb.append(this.computedSpaceRightOfSep);
         }
     }
 
@@ -173,7 +231,8 @@ public final class HoconRenderer {
 
         private final SeparatorCharacter separatorCharacter;
         private final ObjectSeparator objectSeparator;
-        private final StringQuoting stringQuoting;
+        private final Quoting stringQuoting;
+        private final Quoting keyQuoting;
 
         private final int spacesBeforeSeparator;
         private final int spacesAfterSeparator;
@@ -188,6 +247,7 @@ public final class HoconRenderer {
             this.separatorCharacter = builder.separatorCharacter;
             this.objectSeparator = builder.objectSeparator;
             this.stringQuoting = builder.stringQuoting;
+            this.keyQuoting = builder.keyQuoting;
             this.spacesBeforeSeparator = builder.spacesBeforeSeparator;
             this.spacesAfterSeparator = builder.spacesAfterSeparator;
             this.indentCharacter = builder.indentCharacter;
@@ -216,7 +276,8 @@ public final class HoconRenderer {
 
             SeparatorCharacter separatorCharacter = SeparatorCharacter.COLON;
             ObjectSeparator objectSeparator = ObjectSeparator.OMITTED;
-            StringQuoting stringQuoting = StringQuoting.WHEN_REQUIRED;
+            Quoting stringQuoting = Quoting.WHEN_REQUIRED;
+            Quoting keyQuoting = Quoting.WHEN_REQUIRED;
 
             int spacesBeforeSeparator = 0;
             int spacesAfterSeparator = 1;
@@ -239,6 +300,7 @@ public final class HoconRenderer {
                 builder.separatorCharacter = options.separatorCharacter;
                 builder.objectSeparator = options.objectSeparator;
                 builder.stringQuoting = options.stringQuoting;
+                builder.keyQuoting = options.keyQuoting;
                 builder.spacesBeforeSeparator = options.spacesBeforeSeparator;
                 builder.spacesAfterSeparator = options.spacesAfterSeparator;
                 builder.indentCharacter = options.indentCharacter;
@@ -258,8 +320,13 @@ public final class HoconRenderer {
                 return this;
             }
 
-            public Builder withStringQuoting(final StringQuoting stringQuoting) {
+            public Builder withStringQuoting(final Quoting stringQuoting) {
                 this.stringQuoting = stringQuoting;
+                return this;
+            }
+
+            public Builder withKeyQuoting(final Quoting keyQuoting) {
+                this.keyQuoting = keyQuoting;
                 return this;
             }
 
@@ -290,6 +357,46 @@ public final class HoconRenderer {
             }
         }
 
+        public SeparatorCharacter getSeparatorCharacter() {
+            return separatorCharacter;
+        }
+
+        public ObjectSeparator getObjectSeparator() {
+            return objectSeparator;
+        }
+
+        public Quoting getStringQuoting() {
+            return stringQuoting;
+        }
+
+        public Quoting getKeyQuoting() {
+            return keyQuoting;
+        }
+
+        public int getSpacesBeforeSeparator() {
+            return spacesBeforeSeparator;
+        }
+
+        public int getSpacesAfterSeparator() {
+            return spacesAfterSeparator;
+        }
+
+        public IndentCharacter getIndentCharacter() {
+            return indentCharacter;
+        }
+
+        public int getIndent() {
+            return indent;
+        }
+
+        public CommentStyle getCommentStyle() {
+            return commentStyle;
+        }
+
+        public LineSeparator getLineSeparator() {
+            return lineSeparator;
+        }
+
         public enum SeparatorCharacter {
             COLON(':'),
             EQUALS('=');
@@ -310,7 +417,7 @@ public final class HoconRenderer {
             INCLUDED
         }
 
-        public enum StringQuoting {
+        public enum Quoting {
             WHEN_REQUIRED,
             ALWAYS
         }
@@ -332,7 +439,7 @@ public final class HoconRenderer {
 
         public enum CommentStyle {
             HASH("#"),
-            SLASH("//");
+            DOUBLE_SLASH("//");
 
             private final String commentPrefix;
 
