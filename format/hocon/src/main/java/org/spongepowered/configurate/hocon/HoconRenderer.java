@@ -1,18 +1,35 @@
+/*
+ * Configurate
+ * Copyright (C) zml and Configurate contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.spongepowered.configurate.hocon;
+
+import static org.spongepowered.configurate.loader.AbstractConfigurationLoader.CONFIGURATE_LINE_PATTERN;
 
 import com.typesafe.config.ConfigRenderOptions;
 import com.typesafe.config.ConfigValueFactory;
 import com.typesafe.config.impl.ConfigImplUtil;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import org.spongepowered.configurate.ConfigurateException;
 import org.spongepowered.configurate.ConfigurationNode;
 import org.spongepowered.configurate.util.Strings;
 
-import static org.spongepowered.configurate.loader.AbstractConfigurationLoader.CONFIGURATE_LINE_PATTERN;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 
 public final class HoconRenderer {
 
@@ -26,7 +43,7 @@ public final class HoconRenderer {
 
     private HoconRenderer(final Options options) {
         this.options = options;
-        final String indentChar = Character.toString(this.options.indentCharacter.getIndentChar());
+        final String indentChar = Character.toString(this.options.indentCharacter.indentChar());
         this.computedIndent = Strings.repeat(indentChar, this.options.indent);
 
         this.computedSpaceLeftOfSep = Strings.repeat(" ", this.options.spacesBeforeSeparator);
@@ -35,7 +52,7 @@ public final class HoconRenderer {
         this.valueRenderOptions = quotingRenderOptions(this.options.stringQuoting);
     }
 
-    private static ConfigRenderOptions quotingRenderOptions(Options.Quoting quoting) {
+    private static ConfigRenderOptions quotingRenderOptions(final Options.Quoting quoting) {
         if (quoting == Options.Quoting.ALWAYS) {
             // concise defaults to `json` which will always quote strings
             return ConfigRenderOptions.concise();
@@ -78,14 +95,18 @@ public final class HoconRenderer {
 
         for (String line : CONFIGURATE_LINE_PATTERN.split(comment)) {
             this.renderIndent(sb, indentLevel);
-            sb.append(this.options.commentStyle.getCommentPrefix());
+            sb.append(this.options.commentStyle.commentPrefix());
             sb.append(' ');
             sb.append(line);
             renderNewline(sb);
         }
     }
 
-    private void renderMap(final StringBuilder sb, final Map<Object, ? extends ConfigurationNode> map, final int indentLevel) throws ConfigurateException {
+    private void renderMap(
+        final StringBuilder sb,
+        final Map<Object, ? extends ConfigurationNode> map,
+        final int indentLevel
+    ) throws ConfigurateException {
         if (indentLevel > 0) {
             // Only open maps when we aren't dealing with the root node
             sb.append('{');
@@ -214,14 +235,14 @@ public final class HoconRenderer {
     }
 
     private void renderNewline(final StringBuilder sb) {
-        sb.append(this.options.lineSeparator.getSeparator());
+        sb.append(this.options.lineSeparator.separator());
     }
 
     private void renderKeyValueSeparator(final StringBuilder sb) {
         if (!this.computedSpaceLeftOfSep.isEmpty()) {
             sb.append(this.computedSpaceLeftOfSep);
         }
-        sb.append(this.options.separatorCharacter.getSeparator());
+        sb.append(this.options.separatorCharacter.separator());
         if (!this.computedSpaceRightOfSep.isEmpty()) {
             sb.append(this.computedSpaceRightOfSep);
         }
@@ -279,7 +300,7 @@ public final class HoconRenderer {
             Quoting stringQuoting = Quoting.WHEN_REQUIRED;
             Quoting keyQuoting = Quoting.WHEN_REQUIRED;
 
-            int spacesBeforeSeparator = 0;
+            int spacesBeforeSeparator;
             int spacesAfterSeparator = 1;
 
             IndentCharacter indentCharacter = IndentCharacter.SPACE;
@@ -296,7 +317,7 @@ public final class HoconRenderer {
             }
 
             static Builder copyFrom(final Options options) {
-                Builder builder = defaults();
+                final Builder builder = defaults();
                 builder.separatorCharacter = options.separatorCharacter;
                 builder.objectSeparator = options.objectSeparator;
                 builder.stringQuoting = options.stringQuoting;
@@ -357,44 +378,44 @@ public final class HoconRenderer {
             }
         }
 
-        public SeparatorCharacter getSeparatorCharacter() {
-            return separatorCharacter;
+        public SeparatorCharacter separatorCharacter() {
+            return this.separatorCharacter;
         }
 
-        public ObjectSeparator getObjectSeparator() {
-            return objectSeparator;
+        public ObjectSeparator objectSeparator() {
+            return this.objectSeparator;
         }
 
-        public Quoting getStringQuoting() {
-            return stringQuoting;
+        public Quoting stringQuoting() {
+            return this.stringQuoting;
         }
 
-        public Quoting getKeyQuoting() {
-            return keyQuoting;
+        public Quoting keyQuoting() {
+            return this.keyQuoting;
         }
 
-        public int getSpacesBeforeSeparator() {
-            return spacesBeforeSeparator;
+        public int spacesBeforeSeparator() {
+            return this.spacesBeforeSeparator;
         }
 
-        public int getSpacesAfterSeparator() {
-            return spacesAfterSeparator;
+        public int spacesAfterSeparator() {
+            return this.spacesAfterSeparator;
         }
 
-        public IndentCharacter getIndentCharacter() {
-            return indentCharacter;
+        public IndentCharacter indentCharacter() {
+            return this.indentCharacter;
         }
 
-        public int getIndent() {
-            return indent;
+        public int indent() {
+            return this.indent;
         }
 
-        public CommentStyle getCommentStyle() {
-            return commentStyle;
+        public CommentStyle commentStyle() {
+            return this.commentStyle;
         }
 
-        public LineSeparator getLineSeparator() {
-            return lineSeparator;
+        public LineSeparator lineSeparator() {
+            return this.lineSeparator;
         }
 
         public enum SeparatorCharacter {
@@ -407,8 +428,8 @@ public final class HoconRenderer {
                 this.separator = separator;
             }
 
-            public char getSeparator() {
-                return separator;
+            public char separator() {
+                return this.separator;
             }
         }
 
@@ -432,8 +453,8 @@ public final class HoconRenderer {
                 this.indentChar = indentChar;
             }
 
-            public char getIndentChar() {
-                return indentChar;
+            public char indentChar() {
+                return this.indentChar;
             }
         }
 
@@ -447,8 +468,8 @@ public final class HoconRenderer {
                 this.commentPrefix = commentPrefix;
             }
 
-            public String getCommentPrefix() {
-                return commentPrefix;
+            public String commentPrefix() {
+                return this.commentPrefix;
             }
         }
 
@@ -463,9 +484,11 @@ public final class HoconRenderer {
                 this.separator = separator;
             }
 
-            public String getSeparator() {
-                return separator;
+            public String separator() {
+                return this.separator;
             }
         }
+
     }
+
 }

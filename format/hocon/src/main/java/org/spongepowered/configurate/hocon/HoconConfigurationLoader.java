@@ -187,13 +187,13 @@ public final class HoconConfigurationLoader extends AbstractConfigurationLoader<
             // Order changes which CommentHandler is the default, which changes how the header will be written
             // to match the selected comment style
             final HoconRenderer.Options options = this.getExperimentalSerializerOptions();
-            switch (options.getCommentStyle()) {
+            switch (options.commentStyle()) {
                 case HASH:
                     return new CommentHandler[] {CommentHandlers.HASH, CommentHandlers.DOUBLE_SLASH};
                 case DOUBLE_SLASH:
                     return new CommentHandler[] {CommentHandlers.DOUBLE_SLASH, CommentHandlers.HASH};
                 default:
-                    throw new IllegalStateException("Unexpected comment style: " + options.getCommentStyle());
+                    throw new IllegalStateException("Unexpected comment style: " + options.commentStyle());
             }
         }
 
