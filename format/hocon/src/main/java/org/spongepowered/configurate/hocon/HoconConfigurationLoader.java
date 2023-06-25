@@ -26,7 +26,6 @@ import com.typesafe.config.ConfigOriginFactory;
 import com.typesafe.config.ConfigRenderOptions;
 import com.typesafe.config.ConfigValue;
 import com.typesafe.config.ConfigValueFactory;
-import java.util.Iterator;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import org.spongepowered.configurate.CommentedConfigurationNodeIntermediary;
@@ -36,7 +35,6 @@ import org.spongepowered.configurate.ConfigurationOptions;
 import org.spongepowered.configurate.loader.AbstractConfigurationLoader;
 import org.spongepowered.configurate.loader.CommentHandler;
 import org.spongepowered.configurate.loader.CommentHandlers;
-import org.spongepowered.configurate.loader.HeaderMode;
 import org.spongepowered.configurate.loader.LoaderOptionSource;
 import org.spongepowered.configurate.loader.ParsingException;
 import org.spongepowered.configurate.util.UnmodifiableCollections;
@@ -49,6 +47,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -242,9 +241,7 @@ public final class HoconConfigurationLoader extends AbstractConfigurationLoader<
             throw new ParsingException(node, ex.origin().lineNumber(), 0, ex.origin().description(), null, ex);
         }
 
-        for (Map.Entry<String, ConfigValue> ent : hoconConfig.root().entrySet()) {
-            readConfigValue(ent.getValue(), node.node(ent.getKey()));
-        }
+        readConfigMap(hoconConfig.root(), node);
     }
 
     private static void readConfigValue(final ConfigValue value, final CommentedConfigurationNode node) {
@@ -267,9 +264,7 @@ public final class HoconConfigurationLoader extends AbstractConfigurationLoader<
                 if (object.isEmpty()) {
                     node.raw(Collections.emptyMap());
                 } else {
-                    for (Map.Entry<String, ConfigValue> ent : object.entrySet()) {
-                        readConfigValue(ent.getValue(), node.node(ent.getKey()));
-                    }
+                    readConfigMap(object, node);
                 }
                 break;
             case LIST:
@@ -287,6 +282,18 @@ public final class HoconConfigurationLoader extends AbstractConfigurationLoader<
             default:
                 node.raw(value.unwrapped());
                 break;
+        }
+    }
+
+    private static void readConfigMap(final ConfigObject value, final CommentedConfigurationNode node) {
+        // The typesafe library doesn't keep the elements sorted in any way, so we need to re-sort them beforehand
+        final List<Map.Entry<String, ConfigValue>> entries = value.entrySet().stream()
+            .sorted(Comparator.comparing(c -> c.getValue().origin().lineNumber()))
+            .collect(Collectors.toList());
+
+        for (Map.Entry<String, ConfigValue> ent : entries) {
+            final CommentedConfigurationNode newNode = node.node(ent.getKey());
+            readConfigValue(ent.getValue(), newNode);
         }
     }
 
